@@ -5,7 +5,9 @@ import json
 import hashlib
 import hmac
 import requests
-
+import csv
+from collections import namedtuple,defaultdict
+import pandas as pd
 
 
 class API(object):
@@ -42,7 +44,7 @@ class API(object):
             self.end_point = config.get(self.profile, 'end_point')
 
 
-    def query(self, link_query, start, stop=None, mode='csv', stream=False):
+    def _query(self, linq_query, start, stop=None, mode='csv', stream=False):
         """
         Run a link query and return the results
 
@@ -52,11 +54,11 @@ class API(object):
         stop: End time of the query in the same format as start.
         Set stop to None for a continuous query
         """
-        if link_query.endswith('.link'):
-            with open(link_query, 'r') as f:
+        if linq_query.endswith('.linq'):
+            with open(linq_query, 'r') as f:
                 query_text = f.read()
         else:
-            query_text = link_query
+            query_text = linq_query
 
 
         if stop is None:
@@ -72,6 +74,31 @@ class API(object):
             return r.iter_lines()
         else:
             return r.text
+
+
+    def _get_types(self,linq_query):
+        '''
+        Gets types of each column of submitted
+
+        '''
+
+        map = defaultdict(lambda : str,{
+                'timestamp':lambda t: datetime.datetime.strptime(t, '%Y-%m-%d %H:%M:%S.%f'),
+                'str': str,
+                'int8': int,
+                'int4': int,
+                'float8': float,
+                'float4': float
+               })
+
+        data = self._query(linq_query, start='1970-01-01', stop='1970-01-02', mode='json/compact')
+        j = json.loads(data)
+        col_data = j['object']['m']
+
+        type_dict = { k:map[v['type']] for k,v in col_data.items() }
+
+        return type_dict
+
 
 
 
@@ -163,7 +190,74 @@ class API(object):
 
         return r
 
+    @staticmethod
+    def _decode_results(r):
+        for l in r:
+            yield l.decode('utf-8')
 
+
+
+    def _stream(self, linq_query, start, stop=None):
+        """
+        yields columns names then rows in lists with converted
+        types
+        """
+
+        type_dict = self._get_types(linq_query)
+
+        result = self._query(linq_query, start, stop, mode = 'csv', stream = True)
+        result = self._decode_results(result)
+
+        reader = csv.reader(result)
+        cols = next(reader)
+        type_list = [type_dict[c] for c in cols]
+
+        yield cols
+
+        for row in reader:
+            yield [t(v) for t, v in zip(type_list, row)]
+
+
+    def query(self, linq_query, start, stop=None, method='dict'):
+
+
+        valid_methods = ('dict', 'list', 'namedtuple', 'dataframe')
+        assert method in valid_methods, "method must be in {0}".format(valid_methods)
+
+        assert not (method=='dataframe' and stop is None), "DataFrame can't be build from continuous query"
+
+
+        results = self._stream(linq_query,start,stop)
+
+        cols = next(results)
+
+
+        return getattr(self, '_to_{0}'.format(method))(results,cols)
+
+
+
+
+    def _to_list(self, results,cols):
+        yield from results
+
+    def _to_dict(self, results, cols):
+        for row in results:
+            yield {c:v for c,v in zip(cols,row)}
+
+    def _to_namedtuple(self, results, cols):
+        Row = namedtuple('Row', cols)
+        for row in results:
+            yield Row(*row)
+
+    def _to_dataframe(self,results,cols):
+        return pd.DataFrame(results, columns=cols)
+
+
+
+
+
+if __name__ == "__main__":
+    a = API()
 
 
 
