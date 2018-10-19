@@ -1,6 +1,8 @@
 import os
+import sys
 import configparser
 import datetime
+from datetime import timezone
 import json
 import hashlib
 import hmac
@@ -88,10 +90,11 @@ class API(object):
                 'int8': int,
                 'int4': int,
                 'float8': float,
-                'float4': float
+                'float4': float,
+                'bool': lambda b: b == 'true'
                })
 
-        data = self._query(linq_query, start='1970-01-01', stop='1970-01-02', mode='json/compact')
+        data = self._query(linq_query, start=1, stop=2, mode='json/compact')
         j = json.loads(data)
         col_data = j['object']['m']
 
@@ -119,10 +122,10 @@ class API(object):
 
         elif type(date) == str:
             dt = datetime.datetime.strptime(date, '%Y-%m-%d')
-            epoch = dt.timestamp()
+            epoch = dt.replace(tzinfo=timezone.utc).timestamp()
 
         elif type(date) == datetime.datetime:
-            epoch = date.timestamp()
+            epoch = date.replace(tzinfo=timezone.utc).timestamp()
 
         elif isinstance(date, (int,float)):
             epoch = date
@@ -210,6 +213,9 @@ class API(object):
 
         reader = csv.reader(result)
         cols = next(reader)
+
+        assert len(cols) == len(type_dict), "Duplicate column names encountered, custom columns must be named"
+
         type_list = [type_dict[c] for c in cols]
 
         yield cols
@@ -218,13 +224,13 @@ class API(object):
             yield [t(v) for t, v in zip(type_list, row)]
 
 
-    def query(self, linq_query, start, stop=None, method='dict'):
+    def query(self, linq_query, start, stop=None, output='dict'):
 
 
-        valid_methods = ('dict', 'list', 'namedtuple', 'dataframe')
-        assert method in valid_methods, "method must be in {0}".format(valid_methods)
+        valid_outputs = ('dict', 'list', 'namedtuple', 'dataframe')
+        assert output in valid_outputs, "method must be in {0}".format(valid_outputs)
 
-        assert not (method=='dataframe' and stop is None), "DataFrame can't be build from continuous query"
+        assert not (output=='dataframe' and stop is None), "DataFrame can't be build from continuous query"
 
 
         results = self._stream(linq_query,start,stop)
@@ -232,25 +238,29 @@ class API(object):
         cols = next(results)
 
 
-        return getattr(self, '_to_{0}'.format(method))(results,cols)
+        return getattr(self, '_to_{0}'.format(output))(results,cols)
 
 
-
-
-    def _to_list(self, results,cols):
+    @staticmethod
+    def _to_list(results,cols):
         yield from results
 
-    def _to_dict(self, results, cols):
+    @staticmethod
+    def _to_dict(results, cols):
         for row in results:
             yield {c:v for c,v in zip(cols,row)}
 
-    def _to_namedtuple(self, results, cols):
+    @staticmethod
+    def _to_namedtuple(results, cols):
         Row = namedtuple('Row', cols)
         for row in results:
             yield Row(*row)
 
-    def _to_dataframe(self,results,cols):
+    @staticmethod
+    def _to_dataframe(results,cols):
         return pd.DataFrame(results, columns=cols)
+
+
 
 
 
