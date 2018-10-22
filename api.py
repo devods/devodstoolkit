@@ -78,11 +78,13 @@ class API(object):
             return r.text
 
 
-    def _get_types(self,linq_query):
+    def _get_types(self,linq_query,start):
         '''
         Gets types of each column of submitted
-
         '''
+
+        start = self._to_unix(start)
+        stop = start + 1
 
         map = defaultdict(lambda : str,{
                 'timestamp':lambda t: datetime.datetime.strptime(t, '%Y-%m-%d %H:%M:%S.%f'),
@@ -94,9 +96,9 @@ class API(object):
                 'bool': lambda b: b == 'true'
                })
 
-        data = self._query(linq_query, start=1, stop=2, mode='json/compact')
+        data = self._query(linq_query, start=start, stop=stop, mode='json/simple/compact')
         j = json.loads(data)
-        col_data = j['object']['m']
+        col_data = j['m']
 
         type_dict = { k:map[v['type']] for k,v in col_data.items() }
 
@@ -134,7 +136,7 @@ class API(object):
         if milliseconds:
             epoch *= 1000
 
-        return str(int(epoch))
+        return int(epoch)
 
 
     def load(self, source, location, historical=False, date_col=None):
@@ -161,6 +163,7 @@ class API(object):
         stop = self._to_unix(stop)
 
         ts = self._to_unix('now', milliseconds=True)
+        ts = str(ts)
 
 
         body = json.dumps({'query': query_text,
@@ -193,6 +196,7 @@ class API(object):
 
         return r
 
+
     @staticmethod
     def _decode_results(r):
         for l in r:
@@ -206,7 +210,7 @@ class API(object):
         types
         """
 
-        type_dict = self._get_types(linq_query)
+        type_dict = self._get_types(linq_query, start)
 
         result = self._query(linq_query, start, stop, mode = 'csv', stream = True)
         result = self._decode_results(result)
@@ -268,7 +272,6 @@ class API(object):
 
 if __name__ == "__main__":
     a = API()
-
 
 
 
