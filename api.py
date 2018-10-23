@@ -111,8 +111,12 @@ class API(object):
         start = self._to_unix(start)
         stop = start + 1
 
-        data = self._query(linq_query, start=start, stop=stop, mode='json/compact', limit=1)
-        col_data = json.loads(data)['object']['m']
+        response = self._query(linq_query, start=start, stop=stop, mode='json/compact', limit=1)
+        data = json.loads(response)
+
+        assert data['status'] == 0, 'Query Error'
+
+        col_data = data['object']['m']
 
         type_dict = { k:self._map[v['type']] for k,v in col_data.items() }
 
@@ -135,8 +139,7 @@ class API(object):
             epoch = datetime.datetime.now().timestamp()
 
         elif type(date) == str:
-            dt = datetime.datetime.strptime(date, '%Y-%m-%d')
-            epoch = dt.replace(tzinfo=timezone.utc).timestamp()
+            epoch = pd.to_datetime(date).timestamp()
 
         elif type(date) == datetime.datetime:
             epoch = date.replace(tzinfo=timezone.utc).timestamp()
@@ -213,6 +216,20 @@ class API(object):
 
     @staticmethod
     def _decode_results(r):
+        r = iter(r)
+
+        # catch error not reported for json
+        first = next(r)
+        query_error = False
+        try:
+            query_error = (json.loads(first)['status'] == 500)
+        except:
+            pass
+
+        assert not query_error, 'Query Error'
+
+
+        yield  first.decode('utf-8')
         for l in r:
             yield l.decode('utf-8')
 
@@ -232,6 +249,8 @@ class API(object):
         reader = csv.reader(result)
         cols = next(reader)
 
+
+
         assert len(cols) == len(type_dict), "Duplicate column names encountered, custom columns must be named"
 
         type_list = [type_dict[c] for c in cols]
@@ -240,6 +259,7 @@ class API(object):
 
         for row in reader:
             yield [t(v) for t, v in zip(type_list, row)]
+
 
 
 
@@ -285,15 +305,4 @@ class API(object):
 
 if __name__ == "__main__":
     a = API()
-
-    start = '2018-10-10'
-    start_plus = 1539129601
-    stop = '2018-10-12'
-
-
-
-q = '''
-from my.app.mlvappdev.groceries
-  select *
-'''
 
