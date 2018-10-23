@@ -28,6 +28,8 @@ class API(object):
             raise Exception('API keys and end point must be specified or in ~/.devo_credentials')
 
 
+        self._make_type_map()
+
 
     def _read_profile(self):
         """
@@ -68,9 +70,6 @@ class API(object):
             stream = True
 
 
-       # if mode not in ('csv','tsv') and stream:
-        #    raise Exception('only csv/tsv formats can be streamed')
-
         r = self._make_request(query_text, start, stop, mode, stream, limit)
 
         if stream:
@@ -88,16 +87,11 @@ class API(object):
                 return f(v)
         return null_f
 
-    def _get_types(self,linq_query,start):
-        '''
-        Gets types of each column of submitted
-        '''
 
-        start = self._to_unix(start)
-        stop = start + 1
+    def _make_type_map(self):
 
         funcs = {
-                'timestamp':lambda t: datetime.datetime.strptime(t, '%Y-%m-%d %H:%M:%S.%f'),
+                'timestamp':lambda t: datetime.datetime.strptime(t.strip(), '%Y-%m-%d %H:%M:%S.%f'),
                 'str': str,
                 'int8': int,
                 'int4': int,
@@ -106,16 +100,23 @@ class API(object):
                 'bool': lambda b: b == 'true'
                }
 
-        map = defaultdict(lambda: str, {t:self._null_decorator(f) for t,f in funcs.items()})
+        self._map = defaultdict(lambda: str, {t:self._null_decorator(f) for t,f in funcs.items()})
+
+
+    def _get_types(self,linq_query,start):
+        '''
+        Gets types of each column of submitted
+        '''
+
+        start = self._to_unix(start)
+        stop = start + 1
 
         data = self._query(linq_query, start=start, stop=stop, mode='json/compact', limit=1)
         col_data = json.loads(data)['object']['m']
 
-        type_dict = { k:map[v['type']] for k,v in col_data.items() }
+        type_dict = { k:self._map[v['type']] for k,v in col_data.items() }
 
         return type_dict
-
-
 
 
     @staticmethod
@@ -242,7 +243,6 @@ class API(object):
 
 
 
-
     def query(self, linq_query, start, stop=None, output='dict'):
 
 
@@ -293,10 +293,7 @@ if __name__ == "__main__":
 
 
 q = '''
-from siem.logtrust.web.activity
-  select ip4(srcPort) as usrcol1
-  group every 5m by username
-  every 5m
-  select count() as count
+from my.app.mlvappdev.groceries
+  select *
 '''
 
