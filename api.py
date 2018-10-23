@@ -241,35 +241,17 @@ class API(object):
             yield [t(v) for t, v in zip(type_list, row)]
 
 
-    def _stream_json(self, linq_query, start, stop):
-
-        results  = self._query(linq_query, start, stop, mode='json/simple/compact', stream=True)
-
-        header = next(results)
-        cols = json.loads(header)['m'].keys()
-        yield cols
-
-        for r in results:
-            yield json.loads(r)['d']
 
 
-
-    def query(self, linq_query, start, stop=None, output='dict', stream_type='csv'):
+    def query(self, linq_query, start, stop=None, output='dict'):
 
 
         valid_outputs = ('dict', 'list', 'namedtuple', 'dataframe')
-        assert output in valid_outputs, "method must be in {0}".format(valid_outputs)
+        assert output in valid_outputs, "output must be in {0}".format(valid_outputs)
 
         assert not (output=='dataframe' and stop is None), "DataFrame can't be build from continuous query"
 
-
-        if stream_type == 'csv':
-            results = self._stream(linq_query,start,stop)
-
-        elif stream_type == 'json':
-            results = self._stream_json(linq_query,start,stop)
-
-
+        results = self._stream(linq_query,start,stop)
         cols = next(results)
 
 
@@ -311,7 +293,10 @@ if __name__ == "__main__":
 
 
 q = '''
-from my.app.mlvappdev.groceries
-  select *
+from siem.logtrust.web.activity
+  select ip4(srcPort) as usrcol1
+  group every 5m by username
+  every 5m
+  select count() as count
 '''
 
