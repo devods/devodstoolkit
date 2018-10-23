@@ -9,6 +9,7 @@ import hmac
 import requests
 import csv
 from collections import namedtuple,defaultdict
+import numpy as np
 import pandas as pd
 
 
@@ -46,7 +47,7 @@ class API(object):
             self.end_point = config.get(self.profile, 'end_point')
 
 
-    def _query(self, linq_query, start, stop=None, mode='csv', stream=False):
+    def _query(self, linq_query, start, stop=None, mode='csv', stream=False, limit=None):
         """
         Run a link query and return the results
 
@@ -67,16 +68,25 @@ class API(object):
             stream = True
 
 
-        if mode not in ('csv','tsv') and stream:
-            raise Exception('only csv/tsv formats can be streamed')
+       # if mode not in ('csv','tsv') and stream:
+        #    raise Exception('only csv/tsv formats can be streamed')
 
-        r = self._make_request(query_text, start, stop, mode, stream)
+        r = self._make_request(query_text, start, stop, mode, stream, limit)
 
         if stream:
             return r.iter_lines()
         else:
             return r.text
 
+
+    @staticmethod
+    def _null_decorator(f):
+        def null_f(v):
+            if v == '':
+                return None
+            else:
+                return f(v)
+        return null_f
 
     def _get_types(self,linq_query,start):
         '''
@@ -86,7 +96,7 @@ class API(object):
         start = self._to_unix(start)
         stop = start + 1
 
-        map = defaultdict(lambda : str,{
+        funcs = {
                 'timestamp':lambda t: datetime.datetime.strptime(t, '%Y-%m-%d %H:%M:%S.%f'),
                 'str': str,
                 'int8': int,
@@ -94,11 +104,12 @@ class API(object):
                 'float8': float,
                 'float4': float,
                 'bool': lambda b: b == 'true'
-               })
+               }
 
-        data = self._query(linq_query, start=start, stop=stop, mode='json/simple/compact')
-        j = json.loads(data)
-        col_data = j['m']
+        map = defaultdict(lambda: str, {t:self._null_decorator(f) for t,f in funcs.items()})
+
+        data = self._query(linq_query, start=start, stop=stop, mode='json/compact', limit=1)
+        col_data = json.loads(data)['object']['m']
 
         type_dict = { k:map[v['type']] for k,v in col_data.items() }
 
@@ -156,7 +167,7 @@ class API(object):
         pass
 
 
-    def _make_request(self, query_text, start, stop, mode, stream):
+    def _make_request(self, query_text, start, stop, mode, stream, limit):
 
 
         start = self._to_unix(start)
@@ -169,7 +180,9 @@ class API(object):
         body = json.dumps({'query': query_text,
                            'from': start,
                            'to': stop,
-                           'mode': {'type': mode}}
+                           'mode': {'type': mode},
+                           'limit': limit
+                           }
                           )
 
 
@@ -228,7 +241,20 @@ class API(object):
             yield [t(v) for t, v in zip(type_list, row)]
 
 
-    def query(self, linq_query, start, stop=None, output='dict'):
+    def _stream_json(self, linq_query, start, stop):
+
+        results  = self._query(linq_query, start, stop, mode='json/simple/compact', stream=True)
+
+        header = next(results)
+        cols = json.loads(header)['m'].keys()
+        yield cols
+
+        for r in results:
+            yield json.loads(r)['d']
+
+
+
+    def query(self, linq_query, start, stop=None, output='dict', stream_type='csv'):
 
 
         valid_outputs = ('dict', 'list', 'namedtuple', 'dataframe')
@@ -237,7 +263,12 @@ class API(object):
         assert not (output=='dataframe' and stop is None), "DataFrame can't be build from continuous query"
 
 
-        results = self._stream(linq_query,start,stop)
+        if stream_type == 'csv':
+            results = self._stream(linq_query,start,stop)
+
+        elif stream_type == 'json':
+            results = self._stream_json(linq_query,start,stop)
+
 
         cols = next(results)
 
@@ -262,7 +293,7 @@ class API(object):
 
     @staticmethod
     def _to_dataframe(results,cols):
-        return pd.DataFrame(results, columns=cols)
+        return pd.DataFrame(results, columns=cols).fillna(np.nan)
 
 
 
@@ -273,9 +304,14 @@ class API(object):
 if __name__ == "__main__":
     a = API()
 
+    start = '2018-10-10'
+    start_plus = 1539129601
+    stop = '2018-10-12'
 
 
 
-
-
+q = '''
+from my.app.mlvappdev.groceries
+  select *
+'''
 
