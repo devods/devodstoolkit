@@ -299,6 +299,27 @@ class API(object):
 
 
 
+    def randomSample(self,linq_query,start,stop,sample_size):
+
+        size_query = linq_query + ' group select count() as count'
+
+        r=self.query(size_query,start,stop,output='list')
+        table_size = next(r)[0]
+
+        p = sample_size/table_size
+
+        sample_query = linq_query + ' where simplify(float8(rand())) < {0} '.format(p)
+
+        while True:
+            df = self.query(sample_query,start,stop,output='dataframe')
+
+            if df.shape[0] >= sample_size:
+                return df.sample(sample_size)
+            else:
+                pass
+
+
+
 
 
 
