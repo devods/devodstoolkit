@@ -8,9 +8,10 @@ import hashlib
 import hmac
 import requests
 import csv
-from collections import namedtuple,defaultdict
+from collections import namedtuple, defaultdict
 import numpy as np
 import pandas as pd
+from scipy.stats import norm
 
 
 class API(object):
@@ -47,6 +48,11 @@ class API(object):
             self.api_key = config.get(self.profile, 'api_key')
             self.api_secret = config.get(self.profile, 'api_secret')
             self.end_point = config.get(self.profile, 'end_point')
+
+        if self.end_point == 'USA':
+            self.end_point = 'https://api-us.logtrust.com/search'
+        if self.end_point == 'EU':
+            self.end_point = 'https://api-eu.logtrust.com/search'
 
 
     def _query(self, linq_query, start, stop=None, mode='csv', stream=False, limit=None):
@@ -196,6 +202,9 @@ class API(object):
                        msg.encode(),
                        hashlib.sha256).hexdigest()
 
+
+
+
         headers = {
             'Content-Type': 'application/json',
             'x-logtrust-apikey': self.api_key,
@@ -229,7 +238,7 @@ class API(object):
         assert not query_error, 'Query Error'
 
 
-        yield  first.decode('utf-8')
+        yield  first.decode('utf-8').strip()  # APIV2 adding space to first line of aggregates
         for l in r:
             yield l.decode('utf-8')
 
@@ -303,10 +312,10 @@ class API(object):
 
         size_query = linq_query + ' group select count() as count'
 
-        r=self.query(size_query,start,stop,output='list')
+        r = self.query(size_query,start,stop,output='list')
         table_size = next(r)[0]
 
-        p = sample_size/table_size
+        p = self._find_optimal_p(n=table_size,k=sample_size,threshold=0.99)
 
         sample_query = linq_query + ' where simplify(float8(rand())) < {0} '.format(p)
 
@@ -319,11 +328,81 @@ class API(object):
                 pass
 
 
+    @staticmethod
+    def _loc_scale(n,p):
+        """
+        Takes parameters of a binomial
+        distribution and finds the mean
+        and std for a normal approximation
+
+        :param n: number of trials
+        :param p: probability of success
+        :return: mean, std
+        """
+        loc = n*p
+        scale = n*p*(1-p)
+
+        return loc,scale
+
+    def _find_optimal_p(self,n,k,threshold):
+        """
+        Use a normal approximation to the
+        binomial distribution.  Starts with
+        p such that mean of B(n,p) = k
+        and iterates.
+
+        :param n: number of trials
+        :param k: desired number of successes
+        :param threshold: desired probability to achieve k successes
+
+        :return: probability of single trial that will yield
+                 k success with n trials with probability of threshold
+
+        """
+        p = k / n
+        while True:
+            loc, scale = self._loc_scale(n, p)
+            # sf = 1 - cdf, but can be more accurate according to scipy docs
+            if norm.sf(x=k - 1, loc=loc, scale=scale) > threshold:
+                break
+            else:
+                p *= 1.001
+
+        return p
+
+
+    def randomSampleColumn(self):
+
+
+        """
+        specify a linq query
+        and specify a column to sample by
+        and specify number of distinct values
+
+        ie sample by phone number
+
+        find all distinct phone numbers that
+        meet the filter/where clause and time range
+        in the linq / start + stop times provided
+        (con't be con't query)
+
+        random pick distinct phone numbers based on
+        specified distinc values
+
+        run specified linq query but filter to only
+        rows that have selected phone numbers
+
+
+        :return:
+        """
+
+        pass
 
 
 
 
 
 if __name__ == "__main__":
-    a = API()
+   a = API()
+
 
