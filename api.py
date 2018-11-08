@@ -202,6 +202,9 @@ class API(object):
                        msg.encode(),
                        hashlib.sha256).hexdigest()
 
+
+
+
         headers = {
             'Content-Type': 'application/json',
             'x-logtrust-apikey': self.api_key,
@@ -235,7 +238,7 @@ class API(object):
         assert not query_error, 'Query Error'
 
 
-        yield  first.decode('utf-8').strip()  # APIV2 adding space to
+        yield  first.decode('utf-8').strip()  # APIV2 adding space to first line of aggregates
         for l in r:
             yield l.decode('utf-8')
 
@@ -401,4 +404,5 @@ class API(object):
 
 if __name__ == "__main__":
    a = API()
+
 
