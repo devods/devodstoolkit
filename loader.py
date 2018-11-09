@@ -6,8 +6,7 @@ import sys
 import csv
 import numpy as np
 from collections import abc
-
-
+from contextlib import contextmanager
 
 
 class Loader:
@@ -20,9 +19,8 @@ class Loader:
         self.chain = chain
         self.relay = relay
 
-
+        self.sock = None
         self.timeout = timeout
-
 
         if not all([key, crt, chain, relay]):
             self._read_profile()
@@ -31,8 +29,6 @@ class Loader:
             raise Exception('Credentials and relay must be specified or in ~/.devo_credentials')
 
         self.address = (self.relay, 443)
-        self._connect_socket()
-
 
     def _read_profile(self):
 
@@ -48,72 +44,110 @@ class Loader:
             self.chain = profile_config.get('chain')
             self.relay = profile_config.get('relay')
 
-
-
+    @contextmanager
     def _connect_socket(self):
 
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.sock.settimeout(self.timeout)
 
         self.sock = ssl.wrap_socket(self.sock,
-                               keyfile=self.key,
-                               certfile=self.crt,
-                               ca_certs=self.chain,
-                               cert_reqs=ssl.CERT_REQUIRED)
+                                    keyfile=self.key,
+                                    certfile=self.crt,
+                                    ca_certs=self.chain,
+                                    cert_reqs=ssl.CERT_REQUIRED)
 
         self.sock.connect(self.address)
 
+        yield None
+        self.sock.close()
+        self.sock = None
 
-    def send_file(self, file):
-        self.sock.sendfile(file)
+    def load_file(self, file_path, tag, historical=True, ts_index=None, ts_name=None, header=False, columns=None):
 
+        with self._connect_socket() as _, open(file_path, 'r') as f:
+            data = csv.reader(f)
+            first = next(data)
 
-    @staticmethod
-    def _make_message_header(tag, historical):
-        hostname = socket.gethostname()
+            if historical:
+                chunk_size = 50
+                num_cols = len(first) - 1
+            else:
+                chunk_size = 1
+                num_cols = len(first)
+
+            if header:
+                if columns is None:
+                    columns = first
+                if ts_name is not None:
+                    ts_index = columns.index(ts_name)
+            else:
+                f.seek(0)
+
+            self._load(data, tag, historical, ts_index, chunk_size)
+
+        self._build_linq(tag, num_cols, columns)
+
+    def load(self, data, tag, historical=True, ts_index=None, ts_name=None, columns=None):
+
+        data = iter(data)
+        first = next(data)
 
         if historical:
-            tag = '(usd)' + tag
+            chunk_size = 50
+            num_cols = len(first) - 1
+        else:
+            chunk_size = 1
+            num_cols = len(first)
 
-        prefix = '<14>{0} '
+        if isinstance(first, abc.Sequence):
+            data = self._process_seq(data, first)
+        elif isinstance(first, abc.Mapping):
+            names = list(first.keys())
+            if historical:
+                ts_index = num_cols
+                names.remove(ts_name)
+                columns = names[:]
+                names += [ts_name]
+            else:
+                columns = names
+            data = self._process_mapping(data, first, names)
 
-        return prefix + '{0} {1}: '.format(hostname, tag)
+        with self._connect_socket() as _:
+            self._load(data, tag, historical, ts_index, chunk_size)
 
+        self._build_linq(tag, num_cols, columns)
 
-    def load_file(self, file_path, tag, historical=True, ts_index=None):
+    def load_df(self, df, tag, ts_name):
 
-        with open(file_path, 'r') as f:
-            data = csv.reader(f)
+        columns = list(df.columns)
+        columns.remove(ts_name)
+        num_cols = len(columns)
 
-            num_cols = len(next(data)) - 1
-            f.seek(0)
+        data = df.to_dict(orient='records')
+        self.load(data, tag, historical=True, ts_name=ts_name)
+        self._build_linq(tag,num_cols,columns)
 
-            self._load(data, tag, historical, ts_index)
-
-        self._build_linq(tag, num_cols)
-
-
-    def _load(self, data, tag, historical, ts_index, chunk_size=50):
+    def _load(self, data, tag, historical, ts_index=None, chunk_size=50):
         """
 
-        :param data: iterable of either lists/tuples or dicts
+        :param data: iterable of either lists
         :param tag:
         :param historical:
         :param ts_index:
         :return:
         """
 
-        message_header_base = self._make_message_header(tag, historical)
-
+        message_header = self._make_message_header(tag, historical)
         counter = 0
         bulk_msg = ''
 
         for row in data:
 
-            ts = row.pop(ts_index) + '.000'
-            header = message_header_base.format(ts)
+            if historical:
+                ts = row.pop(ts_index)
+                message_header = message_header.format(ts)
 
-            bulk_msg += self._make_msg(header, row)
+            bulk_msg += self._make_msg(message_header, row)
             counter += 1
 
             if counter == chunk_size:
@@ -124,6 +158,17 @@ class Loader:
         if bulk_msg:
             self.sock.sendall(bulk_msg.encode())
 
+    @staticmethod
+    def _make_message_header(tag, historical):
+        hostname = socket.gethostname()
+
+        if historical:
+            tag = '(usd)' + tag
+            prefix = '<14>{0} '
+        else:
+            prefix = '<14>Jan  1 00:00:00 '
+
+        return prefix + '{0} {1}: '.format(hostname, tag)
 
     @staticmethod
     def _make_msg(header, row):
@@ -150,51 +195,20 @@ class Loader:
 
         return header + msg + '\n'
 
-
     @staticmethod
     def _process_seq(data, first):
         yield [str(c) for c in first]
         for row in data:
             yield [str(c) for c in row]
 
-
     @staticmethod
-    def _process_mapping(data, first, ts_name):
-        names =  list(first.keys())
-        names.remove(ts_name)
-        names += [ts_name]
-
+    def _process_mapping(data, first, names):
         yield [str(first[c]) for c in names]
-
         for row in data:
             yield [str(row[c]) for c in names]
 
-
-    def load(self, data, tag, historical=True, ts_index=None, ts_name=None):
-
-        data = iter(data)
-        first = next(data)
-        num_cols = len(first) - 1
-
-
-        if isinstance(first, abc.Sequence):
-            data = self._process_seq(data, first)
-        elif isinstance(first, abc.Mapping):
-            ts_index = num_cols
-            data = self._process_mapping(data, first, ts_name)
-
-        if historical:
-            chunk_size = 50
-        else:
-            chunk_size = 1
-
-
-        self._load(data, tag, historical, ts_index, chunk_size)
-
-        self._build_linq(tag, num_cols)
-
-
-    def _build_linq(self, tag, num_cols, columns=None):
+    @staticmethod
+    def _build_linq(tag, num_cols, columns=None):
 
         if columns is None:
             columns = ['col_{0}'.format(i) for i in range(num_cols)]
@@ -214,8 +228,22 @@ class Loader:
 
         '''.format(tag=tag)
 
-        for i, col_name in zip(range(num_cols), columns):
+        for i, col_name in enumerate(columns):
             linq += col_extract.format(i=i, col_name=col_name)
 
         print(linq)
+
+
+if __name__ == "__main__":
+    l = Loader()
+
+
+
+
+
+
+
+
+
+
 
