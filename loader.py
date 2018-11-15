@@ -125,7 +125,7 @@ class Loader:
 
         data = df.to_dict(orient='records')
         self.load(data, tag, historical=True, ts_name=ts_name)
-        self._build_linq(tag,num_cols,columns)
+        self._build_linq(tag, num_cols, columns)
 
     def _load(self, data, tag, historical, ts_index=None, chunk_size=50):
         """
@@ -215,15 +215,15 @@ class Loader:
 
         col_extract = '''
         select substring(payload,
-        int(split(indicies, ",", {i})),
-        int(split(indicies, ",", {i}+1)) - int(split(indicies, ",", {i}))
+        int(split(indices, ",", {i})),
+        int(split(indices, ",", {i}+1)) - int(split(indices, ",", {i}))
         ) as {col_name}
         '''
 
         linq = '''
         from {tag}
 
-        select split(message, "<>", 0) as indicies
+        select split(message, "<>", 0) as indices
         select subs(message, re("[0-9,]*<>"), template("")) as payload
 
         '''.format(tag=tag)

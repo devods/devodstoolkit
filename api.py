@@ -51,9 +51,9 @@ class API(object):
             self.end_point = profile_config.get('end_point')
 
         if self.end_point == 'USA':
-            self.end_point = 'https://api-us.logtrust.com/search'
+            self.end_point = 'https://api-us.logtrust.com/search/query'
         if self.end_point == 'EU':
-            self.end_point = 'https://api-eu.logtrust.com/search'
+            self.end_point = 'https://api-eu.logtrust.com/search/query'
 
     def query(self, linq_query, start, stop=None, output='dict'):
 
