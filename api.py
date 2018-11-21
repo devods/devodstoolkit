@@ -14,6 +14,9 @@ import pandas as pd
 from scipy.stats import norm
 
 
+csv.field_size_limit(sys.maxsize)
+
+
 class API(object):
 
     def __init__(self, profile='default', api_key=None, api_secret=None, end_point=None):

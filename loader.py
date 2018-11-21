@@ -8,6 +8,8 @@ import numpy as np
 from collections import abc
 from contextlib import contextmanager
 
+csv.field_size_limit(sys.maxsize)
+
 
 class Loader:
 
@@ -217,7 +219,7 @@ class Loader:
         select substring(payload,
         int(split(indices, ",", {i})),
         int(split(indices, ",", {i}+1)) - int(split(indices, ",", {i}))
-        ) as {col_name}
+        ) as `{col_name}`
         '''
 
         linq = '''
