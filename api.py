@@ -196,8 +196,10 @@ class API(object):
         Gets types of each column of submitted
         """
 
-        start = self._to_unix(start)
-        stop = start + 1
+        # so we don't have  stop ts in future as required by API V2
+        stop = self._to_unix(start)
+        start = stop - 1
+
 
         response = self._query(linq_query, start=start, stop=stop, mode='json/compact', limit=1)
         data = json.loads(response)
@@ -246,7 +248,7 @@ class API(object):
         first = next(r)
         query_error = False
         try:
-            query_error = (json.loads(first)['status'] == 500)
+            query_error = not (json.loads(first)['status'] == 0)
         except:
             pass
 
