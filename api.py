@@ -19,17 +19,20 @@ csv.field_size_limit(sys.maxsize)
 
 class API(object):
 
-    def __init__(self, profile='default', api_key=None, api_secret=None, end_point=None):
+    def __init__(self, profile='default', api_key=None, api_secret=None, end_point=None, oauth_token=None):
         self.profile = profile
         self.api_key = api_key
         self.api_secret = api_secret
         self.end_point = end_point
+        self.oauth_token = oauth_token
 
-        if not all([api_key, api_secret, end_point]):
+
+
+        if not ( self.end_point and (self.oauth_token or (self.api_key and self.api_secret))):
             self._read_profile()
 
-        if not all([self.api_key, self.api_secret, self.end_point]):
-            raise Exception('API keys and end point must be specified or in ~/.devo_credentials')
+        if not (self.end_point and (self.oauth_token or (self.api_key and self.api_secret))):
+            raise Exception('End point and either API keys or OAuth Token must be specified or in ~/.devo_credentials')
 
 
         self._make_type_map()
@@ -52,6 +55,7 @@ class API(object):
             self.api_key = profile_config.get('api_key')
             self.api_secret = profile_config.get('api_secret')
             self.end_point = profile_config.get('end_point')
+            self.oauth_token = profile_config.get('oauth_token')
 
         if self.end_point == 'USA':
             self.end_point = 'https://api-us.logtrust.com/search/query'
@@ -143,20 +147,28 @@ class API(object):
 
 
 
-        msg = self.api_key + body + ts
-        sig = hmac.new(self.api_secret.encode(),
-                       msg.encode(),
-                       hashlib.sha256).hexdigest()
 
+        if self.api_key and self.api_secret:
 
+            msg = self.api_key + body + ts
+            sig = hmac.new(self.api_secret.encode(),
+                           msg.encode(),
+                           hashlib.sha256).hexdigest()
 
+            headers = {
+                'Content-Type': 'application/json',
+                'x-logtrust-apikey': self.api_key,
+                'x-logtrust-sign': sig,
+                'x-logtrust-timestamp': ts
+            }
 
-        headers = {
-            'Content-Type': 'application/json',
-            'x-logtrust-apikey': self.api_key,
-            'x-logtrust-sign': sig,
-            'x-logtrust-timestamp': ts
-        }
+        else:
+
+            headers = {
+                'Content-Type': 'application/json',
+                'Authorization': 'Bearer ' + self.oauth_token
+            }
+
 
 
         r = requests.post(
@@ -365,8 +377,6 @@ class API(object):
         """
 
         pass
-
-
 
 
 
