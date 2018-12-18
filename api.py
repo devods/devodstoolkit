@@ -14,6 +14,9 @@ import pandas as pd
 from scipy.stats import norm
 
 
+csv.field_size_limit(sys.maxsize)
+
+
 class API(object):
 
     def __init__(self, profile='default', api_key=None, api_secret=None, end_point=None):
@@ -31,7 +34,6 @@ class API(object):
 
         self._make_type_map()
 
-
     def _read_profile(self):
         """
         Read Devo API keys from a credentials file located
@@ -45,15 +47,53 @@ class API(object):
         config.read(credential_path)
 
         if self.profile in config:
-            self.api_key = config.get(self.profile, 'api_key')
-            self.api_secret = config.get(self.profile, 'api_secret')
-            self.end_point = config.get(self.profile, 'end_point')
+            profile_config = config[self.profile]
+
+            self.api_key = profile_config.get('api_key')
+            self.api_secret = profile_config.get('api_secret')
+            self.end_point = profile_config.get('end_point')
 
         if self.end_point == 'USA':
-            self.end_point = 'https://api-us.logtrust.com/search'
+            self.end_point = 'https://api-us.logtrust.com/search/query'
         if self.end_point == 'EU':
-            self.end_point = 'https://api-eu.logtrust.com/search'
+            self.end_point = 'https://api-eu.logtrust.com/search/query'
 
+    def query(self, linq_query, start, stop=None, output='dict'):
+
+        valid_outputs = ('dict', 'list', 'namedtuple', 'dataframe')
+        assert output in valid_outputs, "output must be in {0}".format(valid_outputs)
+
+        assert not (output=='dataframe' and stop is None), "DataFrame can't be build from continuous query"
+
+        results = self._stream(linq_query,start,stop)
+        cols = next(results)
+
+
+        return getattr(self, '_to_{0}'.format(output))(results,cols)
+
+    def _stream(self, linq_query, start, stop=None):
+        """
+        yields columns names then rows in lists with converted
+        types
+        """
+
+        type_dict = self._get_types(linq_query, start)
+
+        result = self._query(linq_query, start, stop, mode = 'csv', stream = True)
+        result = self._decode_results(result)
+
+        reader = csv.reader(result)
+        cols = next(reader)
+
+
+        assert len(cols) == len(type_dict), "Duplicate column names encountered, custom columns must be named"
+
+        type_list = [type_dict[c] for c in cols]
+
+        yield cols
+
+        for row in reader:
+            yield [t(v) for t, v in zip(type_list, row)]
 
     def _query(self, linq_query, start, stop=None, mode='csv', stream=False, limit=None):
         """
@@ -83,100 +123,6 @@ class API(object):
         else:
             return r.text
 
-
-    @staticmethod
-    def _null_decorator(f):
-        def null_f(v):
-            if v == '':
-                return None
-            else:
-                return f(v)
-        return null_f
-
-
-    def _make_type_map(self):
-
-        funcs = {
-                'timestamp':lambda t: datetime.datetime.strptime(t.strip(), '%Y-%m-%d %H:%M:%S.%f'),
-                'str': str,
-                'int8': int,
-                'int4': int,
-                'float8': float,
-                'float4': float,
-                'bool': lambda b: b == 'true'
-               }
-
-        self._map = defaultdict(lambda: str, {t:self._null_decorator(f) for t,f in funcs.items()})
-
-
-    def _get_types(self,linq_query,start):
-        '''
-        Gets types of each column of submitted
-        '''
-
-        start = self._to_unix(start)
-        stop = start + 1
-
-        response = self._query(linq_query, start=start, stop=stop, mode='json/compact', limit=1)
-        data = json.loads(response)
-
-        assert data['status'] == 0, 'Query Error'
-
-        col_data = data['object']['m']
-
-        type_dict = { k:self._map[v['type']] for k,v in col_data.items() }
-
-        return type_dict
-
-
-    @staticmethod
-    def _to_unix(date, milliseconds=False):
-        """
-        Convert date to a unix timestamp in seconds
-
-        date: A unix timestamp in second, a python datetime object,
-        or string in form 'YYYY-mm-dd'
-        """
-
-        if date is None:
-            return None
-
-        elif date == 'now':
-            epoch = datetime.datetime.now().timestamp()
-
-        elif type(date) == str:
-            epoch = pd.to_datetime(date).timestamp()
-
-        elif type(date) == datetime.datetime:
-            epoch = date.replace(tzinfo=timezone.utc).timestamp()
-
-        elif isinstance(date, (int,float)):
-            epoch = date
-
-
-        if milliseconds:
-            epoch *= 1000
-
-        return int(epoch)
-
-
-    def load(self, source, location, historical=False, date_col=None):
-        """
-        Load data into Devo.
-
-        source: file or stream used to send data into Devo.
-
-        location: where to load the data in Devo
-
-        historical: if False, load data with actual time data is sent to Devo.
-        If true, specify date of each row sent in
-
-        date_col: if historical is true, specify which col of input data
-        should be used as date.  If None, use the first column
-        """
-        pass
-
-
     def _make_request(self, query_text, start, stop, mode, stream, limit):
 
 
@@ -202,6 +148,9 @@ class API(object):
                        msg.encode(),
                        hashlib.sha256).hexdigest()
 
+
+
+
         headers = {
             'Content-Type': 'application/json',
             'x-logtrust-apikey': self.api_key,
@@ -219,6 +168,77 @@ class API(object):
 
         return r
 
+    @staticmethod
+    def _null_decorator(f):
+        def null_f(v):
+            if v == '':
+                return None
+            else:
+                return f(v)
+        return null_f
+
+    def _make_type_map(self):
+
+        funcs = {
+                'timestamp':lambda t: datetime.datetime.strptime(t.strip(), '%Y-%m-%d %H:%M:%S.%f'),
+                'str': str,
+                'int8': int,
+                'int4': int,
+                'float8': float,
+                'float4': float,
+                'bool': lambda b: b == 'true'
+               }
+
+        self._map = defaultdict(lambda: str, {t:self._null_decorator(f) for t,f in funcs.items()})
+
+    def _get_types(self,linq_query,start):
+        """
+        Gets types of each column of submitted
+        """
+
+        # so we don't have  stop ts in future as required by API V2
+        stop = self._to_unix(start)
+        start = stop - 1
+
+
+        response = self._query(linq_query, start=start, stop=stop, mode='json/compact', limit=1)
+        data = json.loads(response)
+
+        assert data['status'] == 0, 'Query Error'
+
+        col_data = data['object']['m']
+
+        type_dict = { k:self._map[v['type']] for k,v in col_data.items() }
+
+        return type_dict
+
+    @staticmethod
+    def _to_unix(date, milliseconds=False):
+        """
+        Convert date to a unix timestamp in seconds
+
+        date: A unix timestamp in second, a python datetime object,
+        or string in form 'YYYY-mm-dd'
+        """
+
+        if date is None:
+            return None
+
+        elif date == 'now':
+            epoch = datetime.datetime.now().timestamp()
+        elif type(date) == str:
+            epoch = pd.to_datetime(date).timestamp()
+        elif type(date) == datetime.datetime:
+            epoch = date.replace(tzinfo=timezone.utc).timestamp()
+        elif isinstance(date, (int,float)):
+            epoch = date
+        else:
+            raise Exception('Invalid Date')
+
+        if milliseconds:
+            epoch *= 1000
+
+        return int(epoch)
 
     @staticmethod
     def _decode_results(r):
@@ -228,61 +248,16 @@ class API(object):
         first = next(r)
         query_error = False
         try:
-            query_error = (json.loads(first)['status'] == 500)
+            query_error = not (json.loads(first)['status'] == 0)
         except:
             pass
 
         assert not query_error, 'Query Error'
 
 
-        yield  first.decode('utf-8').strip()  # APIV2 adding space to
+        yield  first.decode('utf-8').strip()  # APIV2 adding space to first line of aggregates
         for l in r:
             yield l.decode('utf-8')
-
-
-
-    def _stream(self, linq_query, start, stop=None):
-        """
-        yields columns names then rows in lists with converted
-        types
-        """
-
-        type_dict = self._get_types(linq_query, start)
-
-        result = self._query(linq_query, start, stop, mode = 'csv', stream = True)
-        result = self._decode_results(result)
-
-        reader = csv.reader(result)
-        cols = next(reader)
-
-
-
-        assert len(cols) == len(type_dict), "Duplicate column names encountered, custom columns must be named"
-
-        type_list = [type_dict[c] for c in cols]
-
-        yield cols
-
-        for row in reader:
-            yield [t(v) for t, v in zip(type_list, row)]
-
-
-
-
-    def query(self, linq_query, start, stop=None, output='dict'):
-
-
-        valid_outputs = ('dict', 'list', 'namedtuple', 'dataframe')
-        assert output in valid_outputs, "output must be in {0}".format(valid_outputs)
-
-        assert not (output=='dataframe' and stop is None), "DataFrame can't be build from continuous query"
-
-        results = self._stream(linq_query,start,stop)
-        cols = next(results)
-
-
-        return getattr(self, '_to_{0}'.format(output))(results,cols)
-
 
     @staticmethod
     def _to_list(results,cols):
@@ -293,6 +268,8 @@ class API(object):
         for row in results:
             yield {c:v for c,v in zip(cols,row)}
 
+
+
     @staticmethod
     def _to_namedtuple(results, cols):
         Row = namedtuple('Row', cols)
@@ -302,8 +279,6 @@ class API(object):
     @staticmethod
     def _to_dataframe(results,cols):
         return pd.DataFrame(results, columns=cols).fillna(np.nan)
-
-
 
     def randomSample(self,linq_query,start,stop,sample_size):
 
@@ -323,7 +298,6 @@ class API(object):
                 return df.sample(sample_size)
             else:
                 pass
-
 
     @staticmethod
     def _loc_scale(n,p):
@@ -367,10 +341,7 @@ class API(object):
 
         return p
 
-
     def randomSampleColumn(self):
-
-
         """
         specify a linq query
         and specify a column to sample by
@@ -401,4 +372,5 @@ class API(object):
 
 if __name__ == "__main__":
    a = API()
+
 
