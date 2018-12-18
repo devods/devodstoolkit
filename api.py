@@ -137,14 +137,13 @@ class API(object):
         ts = str(ts)
 
 
-        body = json.dumps({'query': query_text,
-                           'from': start,
-                           'to': stop,
-                           'mode': {'type': mode},
-                           'limit': limit
-                           }
-                          )
-
+        body = json.dumps({
+            'query': query_text,
+            'from': start,
+            'to': stop,
+            'mode': {'type': mode},
+            'limit': limit
+        })
 
 
 
@@ -166,8 +165,8 @@ class API(object):
 
             headers = {
                 'Content-Type': 'application/json',
-                'Authorization': 'Bearer ' + self.oauth_token
-            }
+                'Authorization': 'Bearer ' + self.oauth_token}
+
 
 
 
