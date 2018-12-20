@@ -161,11 +161,14 @@ class API(object):
                 'x-logtrust-timestamp': ts
             }
 
-        else:
+        elif self.oauth_token:
 
             headers = {
                 'Content-Type': 'application/json',
                 'Authorization': 'Bearer ' + self.oauth_token}
+
+        else:
+            raise Exception('No credentials found')
 
 
 
