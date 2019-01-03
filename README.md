@@ -1,5 +1,13 @@
 # devodstoolkit
 
+## Installing 
+
+The Devo DS Toolkit requires Python 3+
+
+```
+pip install git+https://github.com/devods/devodstoolkit.git
+```
+
 ## Querying Devo
 
 To query Devo, create an `API` object found in [api.py](https://github.com/devods/devodstoolkit/blob/master/api.py)
