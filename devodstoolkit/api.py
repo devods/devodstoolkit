@@ -1,5 +1,6 @@
 import os
 import sys
+import re
 import configparser
 import datetime
 from datetime import timezone
@@ -12,6 +13,9 @@ from collections import namedtuple, defaultdict
 import numpy as np
 import pandas as pd
 from scipy.stats import norm
+
+
+from .error_checking import check_status
 
 
 csv.field_size_limit(sys.maxsize)
@@ -72,7 +76,6 @@ class API(object):
         results = self._stream(linq_query,start,stop)
         cols = next(results)
 
-
         return getattr(self, '_to_{0}'.format(output))(results,cols)
 
     def _stream(self, linq_query, start, stop=None):
@@ -88,7 +91,6 @@ class API(object):
 
         reader = csv.reader(result)
         cols = next(reader)
-
 
         assert len(cols) == len(type_dict), "Duplicate column names encountered, custom columns must be named"
 
@@ -194,7 +196,7 @@ class API(object):
     def _make_type_map(self):
 
         funcs = {
-                'timestamp':lambda t: datetime.datetime.strptime(t.strip(), '%Y-%m-%d %H:%M:%S.%f'),
+                'timestamp': lambda t: datetime.datetime.strptime(t.strip(), '%Y-%m-%d %H:%M:%S.%f'),
                 'str': str,
                 'int8': int,
                 'int4': int,
@@ -214,11 +216,13 @@ class API(object):
         stop = self._to_unix(start)
         start = stop - 1
 
-
         response = self._query(linq_query, start=start, stop=stop, mode='json/compact', limit=1)
-        data = json.loads(response)
 
-        assert data['status'] == 0, 'Query Error'
+        try:
+            data = json.loads(response)
+            check_status(data)
+        except ValueError:
+            raise Exception('API V2 response error')
 
         col_data = data['object']['m']
 
@@ -260,16 +264,13 @@ class API(object):
 
         # catch error not reported for json
         first = next(r)
-        query_error = False
         try:
-            query_error = not (json.loads(first)['status'] == 0)
-        except:
+            data = json.loads(first)
+            check_status(data)
+        except ValueError:
             pass
 
-        assert not query_error, 'Query Error'
-
-
-        yield  first.decode('utf-8').strip()  # APIV2 adding space to first line of aggregates
+        yield first.decode('utf-8').strip()  # APIV2 adding space to first line of aggregates
         for l in r:
             yield l.decode('utf-8')
 
@@ -281,8 +282,6 @@ class API(object):
     def _to_dict(results, cols):
         for row in results:
             yield {c:v for c,v in zip(cols,row)}
-
-
 
     @staticmethod
     def _to_namedtuple(results, cols):
@@ -381,8 +380,5 @@ class API(object):
         pass
 
 
-
-if __name__ == "__main__":
-   a = API()
 
 
