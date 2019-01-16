@@ -1,5 +1,6 @@
 import os
 import sys
+import re
 import configparser
 import datetime
 from datetime import timezone
@@ -88,7 +89,6 @@ class API(object):
 
         reader = csv.reader(result)
         cols = next(reader)
-
 
         assert len(cols) == len(type_dict), "Duplicate column names encountered, custom columns must be named"
 
@@ -194,7 +194,7 @@ class API(object):
     def _make_type_map(self):
 
         funcs = {
-                'timestamp':lambda t: datetime.datetime.strptime(t.strip(), '%Y-%m-%d %H:%M:%S.%f'),
+                'timestamp': lambda t: datetime.datetime.strptime(t.strip(), '%Y-%m-%d %H:%M:%S.%f'),
                 'str': str,
                 'int8': int,
                 'int4': int,
@@ -214,11 +214,13 @@ class API(object):
         stop = self._to_unix(start)
         start = stop - 1
 
-
         response = self._query(linq_query, start=start, stop=stop, mode='json/compact', limit=1)
-        data = json.loads(response)
 
-        assert data['status'] == 0, 'Query Error'
+        try:
+            data = json.loads(response)
+            check_status(data)
+        except ValueError:
+            raise Exception('API V2 response error')
 
         col_data = data['object']['m']
 
@@ -260,16 +262,13 @@ class API(object):
 
         # catch error not reported for json
         first = next(r)
-        query_error = False
         try:
-            query_error = not (json.loads(first)['status'] == 0)
-        except:
+            data = json.loads(first)
+            check_status(data)
+        except ValueError:
             pass
 
-        assert not query_error, 'Query Error'
-
-
-        yield  first.decode('utf-8').strip()  # APIV2 adding space to first line of aggregates
+        yield first.decode('utf-8').strip()  # APIV2 adding space to first line of aggregates
         for l in r:
             yield l.decode('utf-8')
 
@@ -281,8 +280,6 @@ class API(object):
     def _to_dict(results, cols):
         for row in results:
             yield {c:v for c,v in zip(cols,row)}
-
-
 
     @staticmethod
     def _to_namedtuple(results, cols):
@@ -380,6 +377,70 @@ class API(object):
 
         pass
 
+
+class QueryError(Exception):
+    pass
+
+
+def check_status(data):
+    status = data['status']
+
+    if status == 0:
+        return
+    elif status == 400:
+        message = data.get('object', ['400 error'])[0]
+    # missing from clause or other access error (ie oauth token problem)
+    elif status == 403:
+        message = process_403(data)
+    # date issue
+    # general query issue
+    elif status == 500:
+        message = process_500(data)
+    else:
+        message = status
+
+    raise QueryError(message)
+
+
+def process_403(data):
+    error = data.get('error', '')
+    msg = data.get('msg', '')
+
+    if error == "Access not allowed for table 'Nothing'":
+        return error + ". Possible error in from clause"
+    elif not (error or msg):
+        return '403 error'
+    else:
+        return '. '.join(m for m in [msg, error] if m)
+
+
+def process_500(data):
+    try:
+        full_error = data.get('object')[1]
+    except:
+        error = data.get('error', '')
+        msg = data.get('msg', '')
+        if not (error or msg):
+            return '500 error'
+        else:
+            return '. '.join(m for m in [msg, error] if m)
+
+    exception_pattern = r'Error from server: malote\.(.*?): '
+    linq_pattern = r'as an Linq query\. Error:(.*)'
+    error_pattern = r'malote\.{exception}: (.*?) \[MConnectionImpl\[address'
+
+    match = re.search(exception_pattern, full_error)
+    exception_type = match.group(1)
+
+    if exception_type == 'code.CodeParseException':
+        message = re.search(linq_pattern, full_error).group(1)
+    elif exception_type in ('base.StaticException', 'typing.TypingException'):
+        error_pattern = error_pattern.format(exception=exception_type)
+        message = re.search(error_pattern, full_error).group(1)
+    else:
+        message = exception_type
+
+    return message.replace('<?>@', 'Row,Column').strip()
 
 
 if __name__ == "__main__":
