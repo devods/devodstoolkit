@@ -1,3 +1,5 @@
+import re
+
 class QueryError(Exception):
     pass
 
