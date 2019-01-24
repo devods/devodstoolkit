@@ -143,6 +143,9 @@ class Loader:
         counter = 0
         bulk_msg = ''
 
+        if not historical:
+            message_header = message_header_base
+        
         for row in data:
 
             if historical:
