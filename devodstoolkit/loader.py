@@ -139,7 +139,7 @@ class Loader:
         :return:
         """
 
-        message_header = self._make_message_header(tag, historical)
+        message_header_base = self._make_message_header(tag, historical)
         counter = 0
         bulk_msg = ''
 
@@ -147,7 +147,7 @@ class Loader:
 
             if historical:
                 ts = row.pop(ts_index)
-                message_header = message_header.format(ts)
+                message_header = message_header_base.format(ts)
 
             bulk_msg += self._make_msg(message_header, row)
             counter += 1
