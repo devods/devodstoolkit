@@ -239,6 +239,81 @@ class Loader:
         print(linq)
 
 
+
+
+    def load_multi(self, data, tag_index=None, tag_name=None,
+                   historical=True, ts_index=None,
+                   ts_name=None):
+
+        data = iter(data)
+        first = next(data)
+
+        if historical:
+            chunk_size = 50
+        else:
+            chunk_size = 1
+
+        num_cols = len(first)
+
+        if isinstance(first, abc.Sequence):
+            data = self._process_seq(data, first)
+        elif isinstance(first, abc.Mapping):
+            names = list(first.keys())
+            if historical:
+                ts_index = num_cols - 2
+                tag_index = num_cols - 1
+                names.remove(ts_name)
+                names.remove(tag_name)
+                names += [ts_name, tag_name]
+            else:
+                tag_index = num_cols - 1
+                names.remove(tag_name)
+                names += [tag_name]
+
+
+            data = self._process_mapping(data, first, names)
+
+        with self._connect_socket() as _:
+            self._load_multi(data, historical, ts_index, tag_index, chunk_size)
+
+    def _load_multi(self, data, historical, ts_index=None, tag_index=None, chunk_size=50):
+
+        counter = 0
+        bulk_msg = ''
+
+        for row in data:
+
+            if historical:
+
+                # pop in reverse order to preserve indices
+                if ts_index < tag_index:
+                    tag = row.pop(tag_index)
+                    ts = row.pop(ts_index)
+                elif tag_index < ts_index:
+                    ts = row.pop(ts_index)
+                    tag = row.pop(tag_index)
+                else:
+                    raise Exception('ts and tag were assigned same index')
+
+                message_header = self._make_message_header(tag, historical).format(ts)
+
+            else:
+                tag = row.pop(tag_index)
+                message_header = self._make_message_header(tag, historical)
+
+            bulk_msg += self._make_msg(message_header, row)
+            counter += 1
+
+            if counter == chunk_size:
+                self.sock.sendall(bulk_msg.encode())
+                counter = 0
+                bulk_msg = ''
+
+        if bulk_msg:
+            self.sock.sendall(bulk_msg.encode())
+
+
+
 if __name__ == "__main__":
     l = Loader()
 
