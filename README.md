@@ -14,8 +14,8 @@ To query Devo, create an `API` object found in [api.py](https://github.com/devod
 
 `devo_api = API(api_key={your api key}, api_secret={your api secret key}, end_point)`   
 
-The `end_point` for the US is `'https://api-us.logtrust.com/search/query'` and 
-for the EU is `'https://api-eu.logtrust.com/search/query'`
+The `end_point` for the US is `'https://apiv2-us.devo.com/search/query'` and 
+for the EU is `'https://apiv2-eu.devo.com/search/query'`
 
 
 Once you have created an API object, you can query Devo by calling the query method by specifying a LINQ query and a start time.
