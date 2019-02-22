@@ -9,6 +9,7 @@ import hashlib
 import hmac
 import requests
 import csv
+import warnings
 from collections import namedtuple, defaultdict
 import numpy as np
 import pandas as pd
@@ -147,8 +148,6 @@ class API(object):
             'limit': limit
         })
 
-
-
         if self.api_key and self.api_secret:
 
             msg = self.api_key + body + ts
@@ -171,9 +170,6 @@ class API(object):
 
         else:
             raise Exception('No credentials found')
-
-
-
 
         r = requests.post(
             self.end_point,
@@ -299,6 +295,11 @@ class API(object):
 
         r = self.query(size_query,start,stop,output='list')
         table_size = next(r)[0]
+
+        if sample_size >= table_size:
+            warnings.warn('Sample size greater than or equal to total '
+                          'table size.  Returning full table')
+            return self.query(linq_query,start,stop,output='dataframe')
 
         p = self._find_optimal_p(n=table_size,k=sample_size,threshold=0.99)
 
