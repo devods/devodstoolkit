@@ -24,7 +24,7 @@ Credentials must be specified when creating an API object in order to access the
 2. OAuth Token: `devo_api = devo.API(oauth_token={your oauth token}, end_point={your end point})`
 3. Profile: `devo_api = devo.API(profile={your profile})`
 
-The API key and secret as well as the OAuth token can be found and generated from the Devo web UI in the Credentials section under the Administration tab.  These credentials are passed as strings.  A profile can be setup to store credential and end point information in one place.  See the section on credentials file for more information 
+The API key and secret as well as the OAuth token can be found and generated from the Devo web UI in the Credentials section under the Administration tab.  These credentials are passed as strings.  A profile can be setup to store credential and end point information in one place.  See the section on credentials file for more information
 
 The `end_point` for the US is `'https://apiv2-us.devo.com/search/query'` and
 for the EU is `'https://apiv2-eu.devo.com/search/query'`
@@ -35,11 +35,11 @@ for the EU is `'https://apiv2-eu.devo.com/search/query'`
 
 `linq_query`: Linq query to run against Devo as a string
 
-`start`: The start time (in UTC) to run the Linq query on.  start may be specified as a string, a datetime object, or as a unix timestamp in seconds.  Examples are valid strings are: `'2018-01-01'`,  `'Feb 10, 2019'`, or `'2019-01-01 10:05:00'`. Note that strings will be converted by [pandas.to_datetime](https://pandas.pydata.org/pandas-docs/stable/reference/api/pandas.to_datetime.html) 
+`start`: The start time (in UTC) to run the Linq query on.  start may be specified as a string, a datetime object, or as a unix timestamp in seconds.  Examples are valid strings are: `'2018-01-01'`,  `'Feb 10, 2019'`, or `'2019-01-01 10:05:00'`. Note that strings will be converted by [pandas.to_datetime](https://pandas.pydata.org/pandas-docs/stable/reference/api/pandas.to_datetime.html)
 
 `stop`: The end time (in UTC) to run the Linq query on. stop may be None or specified in the same way as start.  Set stop to None for a continuous query.
 
-`output`: Determines how the results of the Linq query will be returned.  Valid options are `'dict', 'list', 'namedtuple', or 'dataframe'`.  If output is `'dataframe'` the results will be returned in a `pandas.DataFrame`.  Note that a dataframe cannot be build from a continuous query.  For any other type of output a generator is returned.  Each element of the generator represents one row data in the results of the Linq query. That row will be stored in the data structure specified by output.  For example, an output of `'dict'` means rows will be represented as dictionaries where the keys are the column names corresponding to the values of that row. 
+`output`: Determines how the results of the Linq query will be returned.  Valid options are `'dict', 'list', 'namedtuple', or 'dataframe'`.  If output is `'dataframe'` the results will be returned in a `pandas.DataFrame`.  Note that a dataframe cannot be build from a continuous query.  For any other type of output a generator is returned.  Each element of the generator represents one row data in the results of the Linq query. That row will be stored in the data structure specified by output.  For example, an output of `'dict'` means rows will be represented as dictionaries where the keys are the column names corresponding to the values of that row.
 
 
 ```
@@ -50,7 +50,7 @@ select eventdate, userid, url'''
 results = devo_api.query(linq_query, start='2018-12-01', stop='2018-12-02')
 next(results)
 ```
-will return 
+will return
 ```
 {'eventdate': datetime.datetime(2018, 12, 1, 19, 27, 41, 817000),
  'userid': 'dd10c103-020d-4d7b-b018-106d67819afd',
@@ -76,6 +76,27 @@ Credentials must also be specified when creating a Loader object in order to sen
 2. Profile: `devo_loader = devo.Loader(profile={your_profile})`
 
 The credentials of the loader are files and the paths to them are passed to the class as strings.  
+
+
+
+#### Real Time vs historical
+
+Both real time and historical data can be sent into Devo using the Loader.
+The `historical` argument to any of the loading method is used to specify if
+the data should be loaded in real time or with a historical timestamp.
+
+For real time uploads, each record sent to Devo will be given an eventdate
+equal to the time that it was received by Devo.  In the case of real time
+uploads, no timestamp needs to be provided within the data itself.
+
+For historical uploads, each record must have a timestamp.  The timestamp
+should be specified using either `ts_index` or `ts_name` (see the description
+of the methods for more information).  This timestamp should be in the
+form of `YYYY-MM-DD hh:mm:ss` with the seconds having an optional fractional
+component. Note that any object that has a string representation of this form
+is a valid timestamp. For example, a `datetime.datetime` object meets this
+criteria.  
+Warning: historical data should be sent into Devo in order        
 
 
 #### Methods
@@ -104,7 +125,7 @@ The credentials of the loader are files and the paths to them are passed to the 
 
 `ts_index` Can be used when historical is True to specify the column in the csv containing the historical timestamp.
 
-`ts_name` Can be used when both historical and header are True.  ts_name specifies the column in the csv containing the historical timestamp by column name. 
+`ts_name` Can be used when both historical and header are True.  ts_name specifies the column in the csv containing the historical timestamp by column name.
 
 `Loader.load_df(df, tag, ts_name)`
 
@@ -149,8 +170,8 @@ devo_api = devo.API(profile='example')
 devo_loader = devo.Loader(profile='example')
 ```
 
-It is not necessary to have credentials for both the API and the Loader in a profile. 
-If you would like to us an Oauth token, that can be included in the profile was well 
+It is not necessary to have credentials for both the API and the Loader in a profile.
+If you would like to us an Oauth token, that can be included in the profile was well
 
 ```
 [oauth-example]
