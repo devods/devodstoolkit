@@ -9,6 +9,7 @@ import hashlib
 import hmac
 import requests
 import csv
+import warnings
 from collections import namedtuple, defaultdict
 import numpy as np
 import pandas as pd
@@ -19,6 +20,7 @@ from .error_checking import check_status
 
 
 csv.field_size_limit(sys.maxsize)
+warnings.simplefilter('always', UserWarning)
 
 
 class API(object):
@@ -147,8 +149,6 @@ class API(object):
             'limit': limit
         })
 
-
-
         if self.api_key and self.api_secret:
 
             msg = self.api_key + body + ts
@@ -171,9 +171,6 @@ class API(object):
 
         else:
             raise Exception('No credentials found')
-
-
-
 
         r = requests.post(
             self.end_point,
@@ -295,10 +292,18 @@ class API(object):
 
     def randomSample(self,linq_query,start,stop,sample_size):
 
+        if (sample_size < 1) or (not isinstance(sample_size, int)):
+            raise Exception('Sample size must be a positive int')
+            
         size_query = linq_query + ' group select count() as count'
 
         r = self.query(size_query,start,stop,output='list')
         table_size = next(r)[0]
+
+        if sample_size >= table_size:
+            warning_msg = 'Sample size greater than or equal to total table size. Returning full table'
+            warnings.warn(warning_msg)
+            return self.query(linq_query,start,stop,output='dataframe')
 
         p = self._find_optimal_p(n=table_size,k=sample_size,threshold=0.99)
 

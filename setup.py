@@ -11,7 +11,7 @@ requires = [
 
 setup(
     name='devodstoolkit',
-    version='0.2.2',
+    version='0.2.3',
     author='Nick Murphy',
     author_email='nick.murphy@devo.com',
     description='APIs for querying and loading data into Devo',
