@@ -25,21 +25,19 @@ warnings.simplefilter('always', UserWarning)
 
 class API(object):
 
-    def __init__(self, profile='default', api_key=None, api_secret=None, end_point=None, oauth_token=None):
+    def __init__(self, profile='default', api_key=None, api_secret=None, end_point=None, oauth_token=None, jwt=None):
         self.profile = profile
         self.api_key = api_key
         self.api_secret = api_secret
         self.end_point = end_point
         self.oauth_token = oauth_token
+        self.jwt = jwt
 
-
-
-        if not ( self.end_point and (self.oauth_token or (self.api_key and self.api_secret))):
+        if not (self.end_point and (self.oauth_token or self.jwt or (self.api_key and self.api_secret))):
             self._read_profile()
 
-        if not (self.end_point and (self.oauth_token or (self.api_key and self.api_secret))):
+        if not (self.end_point and (self.oauth_token or self.jwt or (self.api_key and self.api_secret))):
             raise Exception('End point and either API keys or OAuth Token must be specified or in ~/.devo_credentials')
-
 
         self._make_type_map()
 
@@ -168,6 +166,12 @@ class API(object):
             headers = {
                 'Content-Type': 'application/json',
                 'Authorization': 'Bearer ' + self.oauth_token}
+
+        elif self.jwt:
+
+            headers = {
+                'Content-Type': 'application/json',
+                'Authorization': 'jwt ' + self.jwt}
 
         else:
             raise Exception('No credentials found')
