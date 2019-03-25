@@ -317,7 +317,7 @@ class API(object):
             df = self.query(sample_query,start,stop,output='dataframe')
 
             if df.shape[0] >= sample_size:
-                return df.sample(sample_size)
+                return df.sample(sample_size).sort_index().reset_index(drop=True)
             else:
                 pass
 
@@ -333,7 +333,7 @@ class API(object):
         :return: mean, std
         """
         loc = n*p
-        scale = n*p*(1-p)
+        scale = np.sqrt(n*p*(1-p))
 
         return loc,scale
 
@@ -356,10 +356,10 @@ class API(object):
         while True:
             loc, scale = self._loc_scale(n, p)
             # sf = 1 - cdf, but can be more accurate according to scipy docs
-            if norm.sf(x=k - 1, loc=loc, scale=scale) > threshold:
+            if norm.sf(x=k - 0.5, loc=loc, scale=scale) > threshold:
                 break
             else:
-                p *= 1.001
+                p = min(1.001*p, 1)
 
         return p
 
@@ -391,3 +391,4 @@ class API(object):
 
 
 
+TESTING = 1
